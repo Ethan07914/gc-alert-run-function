@@ -1,20 +1,21 @@
-"""HTTP Cloud Function that runs configured BigQuery queries and emails the
-results when a per-query threshold is met.
+"""Cloud Run Job: run configured BigQuery queries once, check each result
+against its condition, and email the recipients when a condition is met.
 
-Everything project-specific lives in `config.json`, the `SQL/` files, and two
-secret env vars (GMAIL_ADDRESS / GMAIL_APP_PASSWORD). To reuse this on another
-project/dataset, edit those three things only -- `main.py` stays untouched.
+This is a one-shot script (`python main.py`) — it runs, does its work, and
+exits. It is NOT a web server. Everything project-specific lives in
+`config.json`, the `SQL/` files, and two env vars (GMAIL_ADDRESS /
+GMAIL_APP_PASSWORD). To reuse on another project, edit those three things only.
 """
 
 import json
 import operator
 import os
 import smtplib
+import sys
 from email.message import EmailMessage
 from html import escape
 from pathlib import Path
 
-import functions_framework
 from google.cloud import bigquery
 
 BASE_DIR = Path(__file__).parent
@@ -102,48 +103,54 @@ def send_email(email_cfg, html_body):
     msg.set_content("This report requires an HTML-capable email client.")
     msg.add_alternative(html_body, subtype="html")
 
-    # Port 587 + STARTTLS: port 25 is blocked on Cloud Functions, 587 is not.
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+    # timeout=30 so a blocked SMTP port fails fast with an error instead of
+    # hanging until the job times out.
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
         server.starttls()
         server.login(sender, password)
         server.send_message(msg)
 
 
-@functions_framework.http
-def orchestrate_queries(request):
+def run_pipeline():
+    config = load_config()
+    client = bigquery.Client(project=config.get("project_id"))
+    dataset = config["dataset"]
+
+    print("Starting BigQuery orchestration pipeline...")
+
+    triggered = []  # list of (query_name, dashboard_url, [rows that met condition])
+    for i, query in enumerate(config["queries"], start=1):
+        condition = query.get("condition")
+        if not condition:
+            # Conditionless queries never trigger or appear in an email: the
+            # email is sent only for genuine alerts. Skip without running.
+            print(f"Skipping '{query['name']}': no condition configured.")
+            continue
+
+        print(f"Executing step {i} of {len(config['queries'])}: {query['name']}")
+        sql = render_sql(query["file"], dataset)
+        rows = list(client.query(sql).result())
+
+        matched = [r for r in rows if row_meets_condition(r, condition)]
+        if matched:
+            triggered.append((query["name"], query.get("dashboard_url"), matched))
+
+    if triggered:
+        send_email(config["email"], build_email_html(triggered))
+        print(f"Email sent: {len(triggered)} query(ies) met their condition.")
+    else:
+        print("No conditions met; no email sent.")
+
+
+def main():
     try:
-        config = load_config()
-        client = bigquery.Client(project=config.get("project_id"))
-        dataset = config["dataset"]
-
-        print("Starting BigQuery orchestration pipeline...")
-
-        triggered = []  # list of (query_name, dashboard_url, [rows that met condition])
-        for i, query in enumerate(config["queries"], start=1):
-            condition = query.get("condition")
-            if not condition:
-                # Conditionless queries never trigger or appear in an email: the
-                # email is sent only for genuine alerts. Skip without running.
-                print(f"Skipping '{query['name']}': no condition configured.")
-                continue
-
-            print(f"Executing step {i} of {len(config['queries'])}: {query['name']}")
-            sql = render_sql(query["file"], dataset)
-            rows = list(client.query(sql).result())
-
-            matched = [r for r in rows if row_meets_condition(r, condition)]
-            if matched:
-                triggered.append((query["name"], query.get("dashboard_url"), matched))
-
-        if triggered:
-            send_email(config["email"], build_email_html(triggered))
-            message = f"Email sent: {len(triggered)} query(ies) met their condition."
-        else:
-            message = "No conditions met; no email sent."
-
-        print(message)
-        return {"status": "success", "message": message}, 200
-
+        run_pipeline()
     except Exception as e:
-        print(f"Pipeline failed: {str(e)}")
-        return {"status": "error", "message": str(e)}, 500
+        # Print to stderr and exit non-zero so the Cloud Run Job execution is
+        # marked as Failed (and shows up in the logs).
+        print(f"Pipeline failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
