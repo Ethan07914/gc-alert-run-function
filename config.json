@@ -1,0 +1,20 @@
+{
+  "project_id": null,
+  "dataset": "dbt_ethan_dwh_polygon",
+  "email": {
+    "recipients": ["Ethan.Pook10@outlook.com"],
+    "subject": "BigQuery alert: thresholds triggered"
+  },
+  "queries": [
+    {
+      "name": "Greatest percent price change",
+      "file": "1_greatest_percent_price_change.sql",
+      "dashboard_url": "https://datastudio.google.com/reporting/fe8bbbde-0b35-4c62-bb29-014a29fb03fe/page/LZvpF",
+      "condition": {
+        "column": "percent_close_price_difference",
+        "operator": ">=",
+        "value": 5
+      }
+    }
+  ]
+}

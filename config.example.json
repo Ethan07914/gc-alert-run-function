@@ -1,0 +1,39 @@
+{
+  "project_id": null,
+  "dataset": "your_bigquery_dataset",
+  "email": {
+    "recipients": ["alice@example.com", "bob@example.com"],
+    "subject": "BigQuery alert: thresholds triggered"
+  },
+  "queries": [
+    {
+      "name": "Greatest percent price change",
+      "file": "1_greatest_percent_price_change.sql",
+      "dashboard_url": "https://datastudio.google.com/reporting/REPORT_ID/page/PAGE_ID",
+      "condition": {
+        "column": "percent_close_price_difference",
+        "operator": ">=",
+        "value": 5
+      }
+    },
+    {
+      "name": "Stocks below stop-loss",
+      "file": "2_below_stop_loss.sql",
+      "dashboard_url": "https://datastudio.google.com/reporting/ANOTHER_REPORT_ID",
+      "condition": {
+        "column": "close_price",
+        "operator": "<",
+        "value": 10
+      }
+    },
+    {
+      "name": "Rows flagged by a BOOL column",
+      "file": "3_flagged_rows.sql",
+      "dashboard_url": "https://datastudio.google.com/reporting/THIRD_REPORT_ID",
+      "condition": {
+        "column": "is_alert",
+        "operator": "is_true"
+      }
+    }
+  ]
+}
