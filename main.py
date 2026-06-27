@@ -131,6 +131,12 @@ def run_pipeline():
         sql = render_sql(query["file"], dataset)
         rows = list(client.query(sql).result())
 
+        # NOTE: the condition is checked against EVERY row the query returns, and
+        # every matching row is included in the email. A query should therefore
+        # return only the row(s) you actually want to alert on (e.g. the most
+        # recent day) -- use ORDER BY ... LIMIT or a WHERE clause in the SQL.
+        # Returning a large result set will alert if *any* row matches and email
+        # all of them.
         matched = [r for r in rows if row_meets_condition(r, condition)]
         if matched:
             triggered.append((query["name"], query.get("dashboard_url"), matched))

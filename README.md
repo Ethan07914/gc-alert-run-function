@@ -91,6 +91,12 @@ email goes out when nothing is flagged. A query with **no** `condition` is skipp
 entirely (not run, not emailed), so every query that should matter needs one. Omit
 `dashboard_url` to render a query's table with no link.
 
+> ⚠️ **Keep query result sets small.** The condition is evaluated against **every row**
+> the query returns, and **every matching row is included in the email**. Write each query
+> to return only the row(s) you actually want to alert on — e.g. the most recent day via
+> `ORDER BY ... LIMIT 1` or a `WHERE` clause. A query that returns thousands of rows will
+> alert if *any* one of them matches and email all the matches.
+
 ## Secrets
 
 Set via env vars (never commit them) — see `.env.example`:

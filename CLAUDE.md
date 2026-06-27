@@ -37,6 +37,9 @@ new requirement seems to need editing `main.py`, prefer expressing it in `config
   A query with **no** `condition` is **skipped** (not run, not emailed) — the function is an
   alerter, so only condition matches matter. The email is sent only when ≥1 query has matching
   rows; nothing is sent when all clear. To add an operator, extend the relevant dict in `main.py`.
+- **Result-set size**: the condition runs against *every* returned row and *every* match is
+  emailed. Queries must return only the row(s) to alert on (e.g. `ORDER BY ... LIMIT 1`), or a
+  large result set will alert on any single matching row and email them all.
 - **Email**: stdlib `smtplib` + Gmail over `smtp.gmail.com:587` with STARTTLS.
   Port 25 is blocked on Cloud Functions; 587 is not. Requires a Gmail **App Password**,
   not the account password.
