@@ -8,6 +8,10 @@ dashboard so recipients can investigate further.
 It is built to be **cloned and re-pointed** at a different GCP project, dataset, and set
 of queries with **zero changes to `main.py`**.
 
+## Output
+
+<img width="955" height="272" alt="image" src="https://github.com/user-attachments/assets/f69786a6-f64f-4477-8b48-5a61f782347b" />
+
 ## How it works
 
 A single HTTP request runs the whole pipeline top to bottom:
