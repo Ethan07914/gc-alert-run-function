@@ -1,0 +1,16 @@
+# Cloud Build config: build with buildpacks (via the Procfile) and deploy to
+# Cloud Run in one step. Set the trigger's Configuration Type to
+# "Cloud Build configuration file" and point it at /cloudbuild.yaml.
+
+steps:
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - run
+      - deploy
+      - gc-alert-run-function
+      - --source=.
+      - --function=orchestrate_queries
+      - --region=europe-west2
+      - --no-allow-unauthenticated
+options:
+  logging: CLOUD_LOGGING_ONLY
