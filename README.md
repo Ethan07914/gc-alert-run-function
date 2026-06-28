@@ -11,6 +11,21 @@ a web server and has no HTTP endpoint. Run it on a schedule with Cloud Scheduler
 It is built to be **cloned and re-pointed** at a different GCP project, dataset, and set
 of queries with **zero changes to `main.py`**.
 
+## Why this exists
+
+This project gives organisations **early warning when something unusual is happening in
+their data**. Any company running its data in **Google BigQuery** can point this at its own
+tables and get alerted the moment a metric crosses a threshold — a sudden spike or drop, a
+value outside its normal range, a flag flipping to `true`.
+
+The goal is to **catch peculiarities while they're still small**. Instead of an anomaly
+quietly compounding until it's a costly, hard-to-untangle problem, the right people are
+notified straight away (in their inbox or Slack) with the exact rows and a dashboard link —
+so they can investigate and fix the issue quickly, before it grows.
+
+Run it on a schedule (e.g. hourly or daily via Cloud Scheduler) and it becomes a
+lightweight, always-on monitor sitting on top of your existing BigQuery tables.
+
 ## Output
 
 <img width="955" height="272" alt="image" src="https://github.com/user-attachments/assets/f69786a6-f64f-4477-8b48-5a61f782347b" />
