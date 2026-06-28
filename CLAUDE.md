@@ -15,11 +15,13 @@ changes to `main.py`**.
 
 When reusing this on another project, only these change:
 
-1. **`config.json`** — `project_id` (null = use ambient default), `dataset`, email
-   recipients/subject, and the `queries` list (name, SQL file, threshold condition).
+1. **`config.json`** — `project_id` (null = use ambient default), `dataset`, the
+   `email` and/or `slack` notification blocks, and the `queries` list (name, SQL file,
+   threshold condition).
 2. **`SQL/*.sql`** — the queries. Tables must be referenced as `` `{{dataset}}.table` ``;
    the `{{dataset}}` placeholder is substituted at runtime from `config.json`.
-3. **Secret env vars** — `GMAIL_ADDRESS` and `GMAIL_APP_PASSWORD` (see `.env.example`).
+3. **Secret env vars** — `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` for email,
+   `SLACK_WEBHOOK_URL` for Slack (see `.env.example`).
 
 `main.py` is generic and should stay untouched when porting. Keep it that way — if a
 new requirement seems to need editing `main.py`, prefer expressing it in `config.json`.
@@ -43,10 +45,21 @@ new requirement seems to need editing `main.py`, prefer expressing it in `config
 - **Result-set size**: the condition runs against *every* returned row and *every* match is
   emailed. Queries must return only the row(s) to alert on (e.g. `ORDER BY ... LIMIT 1`), or a
   large result set will alert on any single matching row and email them all.
-- **Email**: stdlib `smtplib` + Gmail over `smtp.gmail.com:587` with STARTTLS
-  (`timeout=30` so a blocked port fails fast instead of hanging until the job times out).
-  Port 25 is blocked on Cloud Run; 587 is not. Requires a Gmail **App Password**,
-  not the account password.
+- **Notification channels**: when ≥1 query triggers, the same `triggered` list is sent to
+  every *enabled* channel. `channel_enabled(cfg)` returns true when the channel's config
+  block is present and not `"enabled": false` — so presence alone enables it (email-only
+  configs keep working) and a channel is turned off with `"enabled": false`, not by deletion.
+  Email and Slack are independent; a project can run either, both, or neither.
+  - **Email** (`config["email"]`): stdlib `smtplib` + Gmail over `smtp.gmail.com:587` with
+    STARTTLS (`timeout=30` so a blocked port fails fast instead of hanging the job). Port 25
+    is blocked on Cloud Run; 587 is not. Requires a Gmail **App Password**, not the account
+    password. `build_email_html` renders one HTML table per triggered query.
+  - **Slack** (`config["slack"]`): posts a Block Kit message to an **Incoming Webhook**
+    (`SLACK_WEBHOOK_URL`) via stdlib `urllib.request` — no SDK dependency. `build_slack_message`
+    makes one section per query with a monospace table (`_slack_table`) and the dashboard
+    link; `escape_slack` escapes `& < >` in the query name (table cells sit inside a code
+    block, so they stay literal). Slack returns the body `ok` on success. Optional
+    `slack["header"]` sets the message header.
 - **Query order** is the order in `config.json["queries"]`, not filesystem glob order.
   (SQL filenames are prefixed `1_`, `2_`, … by convention for human readability only.)
 

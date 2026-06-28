@@ -2,8 +2,13 @@
   "project_id": null,
   "dataset": "your_bigquery_dataset",
   "email": {
+    "enabled": true,
     "recipients": ["alice@example.com", "bob@example.com"],
     "subject": "BigQuery alert: thresholds triggered"
+  },
+  "slack": {
+    "enabled": true,
+    "header": "🚨 BigQuery alert: thresholds triggered"
   },
   "queries": [
     {

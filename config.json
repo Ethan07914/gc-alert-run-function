@@ -2,8 +2,13 @@
   "project_id": null,
   "dataset": "dbt_ethan_dwh_polygon",
   "email": {
+    "enabled": true,
     "recipients": ["Ethan.Pook10@outlook.com"],
     "subject": "BigQuery alert: thresholds triggered"
+  },
+  "slack": {
+    "enabled": true,
+    "header": "🚨 BigQuery alert: thresholds triggered"
   },
   "queries": [
     {
