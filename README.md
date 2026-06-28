@@ -1,4 +1,4 @@
-# BigQuery Alert Job
+# bq-alerter
 
 A one-shot Google Cloud Run Job (Python 3.11) that runs a configured list of
 BigQuery queries, checks each result against a threshold, and sends **one** alert —
@@ -172,6 +172,30 @@ the channels you enable. Slack uses an **Incoming Webhook**, so the message alwa
 the single channel that webhook is bound to; pick the destination when you create the
 webhook in Slack.
 
+#### Setting up Slack (app → webhook → channel)
+
+To get a `SLACK_WEBHOOK_URL`, create a Slack app and enable an Incoming Webhook bound to the
+channel you want alerts in. You need permission to install apps in the workspace (otherwise a
+workspace admin has to approve it).
+
+1. **Create the app.** Go to <https://api.slack.com/apps> → **Create New App** → **From
+   scratch**. Give it a name (e.g. `BigQuery Alerts`) and pick the target **workspace**.
+2. **Enable Incoming Webhooks.** In the app's sidebar, open **Features → Incoming Webhooks**
+   and toggle **Activate Incoming Webhooks** on.
+3. **Add a webhook to a channel.** Click **Add New Webhook to Workspace**, then choose the
+   **channel** that should receive the alerts (e.g. `#data-alerts`) and click **Allow**.
+   Slack installs the app and binds the webhook to that one channel.
+4. **Copy the Webhook URL.** Back on the Incoming Webhooks page, copy the generated URL — it
+   has the form `https://hooks.slack.com/services/<TEAM_ID>/<WEBHOOK_ID>/<TOKEN>`. This is
+   your `SLACK_WEBHOOK_URL` (treat it as a secret — anyone with it can post to the channel).
+5. **Wire it in.** Set it as the `SLACK_WEBHOOK_URL` env var (locally, on the Cloud Run Job,
+   or in Secret Manager — see [Secrets](#secrets) and [Deploy](#deploy)) and enable the
+   `slack` block in `config.json`.
+
+The destination channel is fixed at step 3 — to send alerts somewhere else, add another
+webhook (or a new one to a different channel) and swap the URL. To post to multiple channels
+you'd need multiple webhooks; this job sends to the single URL it's given.
+
 ## Secrets
 
 Set via env vars (never commit them) — see `.env.example`. Only the enabled channels need
@@ -217,11 +241,11 @@ The deployed pipeline is three GCP pieces working together:
 Deploy / redeploy the job from source (Cloud Build performs the image build):
 
 ```powershell
-gcloud run jobs deploy bq-alert-job --source . --region <region> `
+gcloud run jobs deploy bq-alerter --source . --region <region> `
   --set-env-vars GMAIL_ADDRESS=you@gmail.com,GMAIL_APP_PASSWORD=app-password,SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
-Run it on demand with `gcloud run jobs execute bq-alert-job --region <region>`.
+Run it on demand with `gcloud run jobs execute bq-alerter --region <region>`.
 
 For production, prefer Secret Manager (`--set-secrets`) over `--set-env-vars` for the
 password and webhook URL.
@@ -232,8 +256,8 @@ The quickest way to deploy is from [Cloud Shell](https://shell.cloud.google.com)
 `gcloud`, `git`, and Docker pre-installed). Clone the repo and `cd` in:
 
 ```bash
-git clone https://github.com/Ethan07914/gc-alert-run-function.git
-cd gc-alert-run-function
+git clone https://github.com/Ethan07914/bq-alerter.git
+cd bq-alerter
 ```
 
 Then run the `gcloud run jobs deploy` command above.
@@ -246,7 +270,7 @@ redeploying the job, submit the build directly — it builds the `Dockerfile` an
 Artifact Registry:
 
 ```bash
-gcloud builds submit --tag <region>-docker.pkg.dev/<project>/<repo>/bq-alert-job .
+gcloud builds submit --tag <region>-docker.pkg.dev/<project>/<repo>/bq-alerter .
 ```
 
 If you've connected a **Cloud Build trigger** to this repo, every `git push` rebuilds the

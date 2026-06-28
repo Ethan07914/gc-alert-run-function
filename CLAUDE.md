@@ -91,9 +91,9 @@ The deployed pipeline has three pieces:
 
 ```powershell
 # Build & (re)deploy the job from source — Cloud Build does the image build:
-gcloud run jobs deploy bq-alert-job --source . --region <region> `
+gcloud run jobs deploy bq-alerter --source . --region <region> `
   --set-env-vars GMAIL_ADDRESS=you@gmail.com,GMAIL_APP_PASSWORD=app-password
 
 # Run once on demand:
-gcloud run jobs execute bq-alert-job --region <region>
+gcloud run jobs execute bq-alerter --region <region>
 ```
