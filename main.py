@@ -3,8 +3,12 @@ against its condition, and email the recipients when a condition is met.
 
 This is a one-shot script (`python main.py`) — it runs, does its work, and
 exits. It is NOT a web server. Everything project-specific lives in
-`config.json`, the `SQL/` files, and two env vars (GMAIL_ADDRESS /
-GMAIL_APP_PASSWORD). To reuse on another project, edit those three things only.
+`config.json`, the `SQL/` files, and the secret env vars (GMAIL_ADDRESS /
+GMAIL_APP_PASSWORD for email, SLACK_WEBHOOK_URL for Slack). To reuse on another
+project, edit those things only.
+
+Alerts can be delivered over email, Slack, or both: each channel has its own
+block in `config.json` and is sent only when present and not `"enabled": false`.
 """
 
 import json
@@ -12,6 +16,8 @@ import operator
 import os
 import smtplib
 import sys
+import urllib.error
+import urllib.request
 from email.message import EmailMessage
 from html import escape
 from pathlib import Path
@@ -111,6 +117,81 @@ def send_email(email_cfg, html_body):
         server.send_message(msg)
 
 
+def _slack_table(rows):
+    """Render rows as a fixed-width monospace table (Slack has no real tables).
+
+    Wrapped in a code block by the caller so the columns stay aligned.
+    """
+    cols = list(rows[0].keys())
+    str_rows = [{c: str(r[c]) for c in cols} for r in rows]
+    widths = {c: max(len(str(c)), *(len(sr[c]) for sr in str_rows)) for c in cols}
+
+    def fmt(values):
+        return " | ".join(str(v).ljust(widths[c]) for c, v in zip(cols, values))
+
+    lines = [fmt(cols), "-+-".join("-" * widths[c] for c in cols)]
+    lines += [fmt(sr[c] for c in cols) for sr in str_rows]
+    return "\n".join(lines)
+
+
+def build_slack_message(slack_cfg, triggered):
+    """Build a Slack Block Kit payload: one section per triggered query.
+
+    Each section is the query name, a monospace table of the matching rows, and
+    the dashboard link (when configured). The header text comes from
+    `slack_cfg["header"]` and falls back to a sensible default.
+    """
+    header = slack_cfg.get("header", "BigQuery alert: thresholds triggered")
+    blocks = [{"type": "header", "text": {"type": "plain_text", "text": header, "emoji": True}}]
+
+    for name, dashboard_url, rows in triggered:
+        table = _slack_table(rows)
+        # Section text caps at 3000 chars; keep room for the name/link/fences.
+        if len(table) > 2800:
+            table = table[:2800] + "\n… (truncated)"
+        text = f"*{escape_slack(name)}*\n```{table}```"
+        if dashboard_url:
+            text += f"\n<{dashboard_url}|Investigate in the Looker Studio dashboard →>"
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": text}})
+        blocks.append({"type": "divider"})
+
+    return {"blocks": blocks}
+
+
+def escape_slack(text):
+    """Escape the three characters Slack treats specially in mrkdwn text."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def send_slack(slack_cfg, triggered):
+    webhook = os.environ["SLACK_WEBHOOK_URL"]
+    payload = json.dumps(build_slack_message(slack_cfg, triggered)).encode("utf-8")
+    req = urllib.request.Request(
+        webhook,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    # timeout=30 mirrors the SMTP path: fail fast instead of hanging the job.
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", "replace").strip()
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        raise RuntimeError(f"Slack webhook failed ({e.code}): {detail}") from e
+    if body != "ok":
+        raise RuntimeError(f"Slack webhook returned unexpected response: {body!r}")
+
+
+def channel_enabled(channel_cfg):
+    """A channel is active when its config block exists and isn't disabled.
+
+    Presence alone enables it (so existing email-only configs keep working);
+    set `"enabled": false` to keep the block but turn the channel off.
+    """
+    return bool(channel_cfg) and channel_cfg.get("enabled", True)
+
+
 def run_pipeline():
     config = load_config()
     client = bigquery.Client(project=config.get("project_id"))
@@ -141,11 +222,25 @@ def run_pipeline():
         if matched:
             triggered.append((query["name"], query.get("dashboard_url"), matched))
 
-    if triggered:
+    if not triggered:
+        print("No conditions met; no notification sent.")
+        return
+
+    # Send to every enabled channel. Email and Slack are independent: a project
+    # can run either, both, or (by disabling both) none.
+    sent = []
+    if channel_enabled(config.get("email")):
         send_email(config["email"], build_email_html(triggered))
-        print(f"Email sent: {len(triggered)} query(ies) met their condition.")
+        sent.append("email")
+    if channel_enabled(config.get("slack")):
+        send_slack(config["slack"], triggered)
+        sent.append("Slack")
+
+    summary = f"{len(triggered)} query(ies) met their condition"
+    if sent:
+        print(f"{summary}; notified via {', '.join(sent)}.")
     else:
-        print("No conditions met; no email sent.")
+        print(f"{summary}, but no notification channel is enabled.")
 
 
 def main():
