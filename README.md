@@ -1,9 +1,12 @@
-# BigQuery Alert Function
+# BigQuery Alert Job
 
-An HTTP-triggered Google Cloud Function (Python 3.11) that runs a configured list of
+A one-shot Google Cloud Run Job (Python 3.11) that runs a configured list of
 BigQuery queries, checks each result against a threshold, and sends **one** email
 containing every query whose threshold was met — each with a link to its Looker Studio
 dashboard so recipients can investigate further.
+
+It is a plain script (`python main.py`) — it runs to completion and exits; it is **not**
+a web server and has no HTTP endpoint. Run it on a schedule with Cloud Scheduler.
 
 It is built to be **cloned and re-pointed** at a different GCP project, dataset, and set
 of queries with **zero changes to `main.py`**.
@@ -14,7 +17,7 @@ of queries with **zero changes to `main.py`**.
 
 ## How it works
 
-A single HTTP request runs the whole pipeline top to bottom:
+Each execution (`main()` → `run_pipeline()`) runs the whole pipeline top to bottom:
 
 1. **Load config** — `load_config()` reads `config.json`: the `dataset`, optional
    `project_id`, the email block (recipients + subject), and the `queries` list.
@@ -34,13 +37,14 @@ A single HTTP request runs the whole pipeline top to bottom:
      HTML email (one table per triggered query, each followed by its dashboard link) →
      `send_email()` sends it via Gmail SMTP (`smtp.gmail.com:587`, STARTTLS).
    - If **nothing** matched → **no email is sent** (no "all clear" summary).
-5. **Return JSON** — `{status, message}` with `200` on success, `500` on error.
+5. **Exit** — the script exits `0` on success. On any error it prints to stderr and
+   exits non-zero, so the Cloud Run Job execution is marked **Failed** in the logs.
 
 ### Pipeline diagram
 
 ```mermaid
 flowchart TD
-    A([HTTP request]) --> B[load_config<br/>read config.json]
+    A([Job execution starts]) --> B[load_config<br/>read config.json]
     B --> C[Create BigQuery client<br/>project_id or ambient default]
     C --> D{More queries<br/>in config?}
 
@@ -57,10 +61,10 @@ flowchart TD
     D -- no --> M{triggered<br/>not empty?}
     M -- yes --> N[build_email_html<br/>one table + dashboard link per query]
     N --> O[send_email<br/>Gmail SMTP 587 + STARTTLS]
-    O --> P([return 200<br/>email sent])
-    M -- no --> Q([return 200<br/>no conditions met, no email])
+    O --> P([exit 0<br/>email sent])
+    M -- no --> Q([exit 0<br/>no conditions met, no email])
 
-    F -. exception .-> R([return 500<br/>error message])
+    F -. exception .-> R([print to stderr<br/>exit 1, execution Failed])
     O -. exception .-> R
 ```
 
@@ -114,18 +118,39 @@ Set via env vars (never commit them) — see `.env.example`:
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 $env:GMAIL_ADDRESS="you@gmail.com"; $env:GMAIL_APP_PASSWORD="app-password"
-functions-framework --target orchestrate_queries --debug   # http://localhost:8080
+python main.py
 ```
 
-Trigger it: `curl http://localhost:8080`
+It runs once and exits — no server, no URL to hit. Authenticate to BigQuery first with
+`gcloud auth application-default login` (or point `GOOGLE_APPLICATION_CREDENTIALS` at a
+service-account key).
 
-## Deploy (Gen 2)
+## Deploy
+
+The deployed pipeline is three GCP pieces working together:
+
+1. **Cloud Build** builds the Docker image. The repo ships a `Dockerfile`
+   (`CMD ["python", "main.py"]`); Cloud Build turns it into a container image in Artifact
+   Registry. Connect a **Cloud Build trigger** to this repo so the image is **rebuilt after
+   every push**.
+2. **Cloud Run Job** executes the image Cloud Build produced. It runs the container to
+   completion and exits — there is no served URL. The two Gmail secrets are configured on
+   the job.
+3. **Cloud Scheduler** triggers the job on **the desired routine** (Cloud Run Jobs have a
+   built-in scheduler trigger), so the queries run on a cron schedule.
+
+```
+ git push ──► Cloud Build (build image) ──► Cloud Run Job (run main.py) ◄── Cloud Scheduler (cron)
+```
+
+Deploy / redeploy the job from source (Cloud Build performs the image build):
 
 ```powershell
-gcloud functions deploy orchestrate_queries --gen2 --runtime python311 `
-  --trigger-http --entry-point orchestrate_queries --region <region> `
+gcloud run jobs deploy bq-alert-job --source . --region <region> `
   --set-env-vars GMAIL_ADDRESS=you@gmail.com,GMAIL_APP_PASSWORD=app-password
 ```
+
+Run it on demand with `gcloud run jobs execute bq-alert-job --region <region>`.
 
 For production, prefer Secret Manager (`--set-secrets`) over `--set-env-vars` for the password.
 
