@@ -28,7 +28,12 @@ lightweight, always-on monitor sitting on top of your existing BigQuery tables.
 
 ## Output
 
+### Email
 <img width="955" height="272" alt="image" src="https://github.com/user-attachments/assets/f69786a6-f64f-4477-8b48-5a61f782347b" />
+
+### Slack
+<img width="1378" height="371" alt="image" src="https://github.com/user-attachments/assets/112be559-719d-42c0-aa9b-b3e320ff0c90" />
+
 
 ## How it works
 
